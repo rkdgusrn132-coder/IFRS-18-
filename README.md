@@ -1,36 +1,83 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+﻿# DART IFRS 18 검토 지원
 
-## Getting Started
+OpenDART의 손익계산서와 사업보고서 주석을 연결하고, 검토자가 분류·메모를 저장하여 Excel 검토조서로 내보내는 Next.js 웹앱입니다. 최종 회계 분류는 검토자가 결정합니다.
 
-First, run the development server:
+## 실행
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
+프로젝트 폴더에서 다음 명령을 실행합니다.
+
+```powershell
+bun install
 bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+브라우저에서 http://localhost:3000 을 엽니다. 이미 사용 중인 포트라면 터미널에 표시된 주소를 사용합니다. OpenDART 키는 프로젝트의 `.env.local`에 `DART_API_KEY` 환경변수로 설정합니다. 키를 변경하면 서버를 재시작합니다. 이 파일은 Git에 포함되지 않으며 키는 서버에서만 사용합니다.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+회사명 또는 종목코드 검색 → 회사 선택 → 연도 및 연결/별도 선택 → 분석 실행 → 계정의 근거 확인 → 분류·검토 상태·메모 입력 → XLSX 내보내기 순서로 사용합니다.
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## 검토 흐름
 
-## Learn More
+- IS를 우선 사용하고 CIS의 OCI·총포괄손익을 별도로 표시합니다. 원본 금액·계정 ID·순서를 보존하며 금액은 백만원, EPS는 원/주로 표시합니다.
+- 금융수익·금융비용은 세부계정을 자동 조회합니다. 상위 계정과 소계에는 분류를 지정하지 않고 실제 세부계정에서 검토합니다.
+- 분류는 영업·투자·재무·법인세·중단영업·추가검토, 상태는 미검토·검토중·완료입니다. 분류 없이 완료로 저장할 수 없습니다.
+- 주석 표의 행·열 병합을 보존합니다. 기타수익/비용은 해당 구간을, 판매비와관리비는 상세 구성을 보여줍니다.
+- 지분법 대사는 당기 투자 변동표의 지분법손익과 손상차손 열을 사용합니다. 임의의 숫자 조합이나 반대 부호의 현금흐름표 조정항목으로 대사를 만들지 않습니다.
 
-To learn more about Next.js, take a look at the following resources:
+### 근거 강도와 회계 판단
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+| 표시 | 의미 |
+| --- | --- |
+| verified | 계정명과 당기 금액이 단위·부호를 포함하여 직접 일치 |
+| reconciled | 의미 있는 당기 표 구성요소를 합산하여 재무제표 금액과 대사 |
+| strong | 관련 계정 또는 표를 찾았지만 금액 대사는 미완료 |
+| review | 제목·키워드·문맥에 따른 검토 후보 |
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+근거 강도와 검색점수는 IFRS 18 분류의 정확도가 아닙니다. 백엔드의 `provisional_category`는 null입니다. 분류에는 자산·부채의 성격, 발생 원천 및 주요 사업활동에 대한 검토가 필요합니다. [IFRS Foundation의 IFRS 18 주요 용어](https://www.ifrs.org/supporting-implementation/supporting-materials-by-ifrs-standards/ifrs-18/key-terms/)를 참고할 수 있습니다.
 
-## Deploy on Vercel
+### 저장과 내보내기
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+브라우저 localStorage v3에 회사·연도·연결/별도·접수번호별로 저장하며 일반 계정과 금융 세부계정을 구분합니다. 접수번호가 바뀌면 기존 결정을 자동 적용하지 않습니다. 접수번호가 없는 기존 v2 기록은 그대로 보존하되 자동 이관하지 않습니다.
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Excel은 Summary, 전체 손익계산서, 세부계정, Evidence, OCI, Reconciliation, Evidence 표의 7개 시트입니다. 검토 입력 드롭다운, 틀 고정, 필터, 대사·완료율 수식과 원본 정보를 포함합니다. 화면에서 아직 조회하지 않은 근거는 Excel에도 미조회로 표시합니다. Excel에서 편집한 내용을 웹앱으로 다시 가져오는 기능은 없습니다.
+
+## 주요 코드
+
+| 경로 | 역할 |
+| --- | --- |
+| `app/page.tsx` | 분석·근거·검토 화면, 자동 저장, 내보내기 |
+| `app/api/company-search` | 회사 검색 |
+| `app/api/ifrs18-statement` | 전체 손익계산서와 보고서 정보 |
+| `app/api/ifrs18-analysis` | 금융 주석의 세부계정 |
+| `app/api/ifrs18-statement-evidence` | 일반 계정 근거와 지분법 대사 |
+| `app/api/ifrs18-evidence` | 금융 금액·분류·문맥 근거 |
+| `app/api/export-xlsx` | 통합 검토조서 다운로드 |
+| `lib/dart.ts` | DART 오류 처리, 보고서 조회, 메모리 캐시 |
+| `lib/evidence.ts` | 단위·기간·부호·표 구조에 따른 대사 |
+| `lib/review.ts`, `lib/types.ts` | 검토 키·저장 형식·공유 타입 |
+| `lib/workbook.ts`, `lib/legacy-export.ts` | 통합 Excel과 기존 export 요청 호환 |
+
+기존 개발용 `test-*` API는 유지하되 production에서는 404를 반환합니다. 실제 분석 경로는 회사나 주석번호를 고정하지 않습니다. 보고서 XML 및 파싱 결과는 접수번호 기반으로 메모리에 캐시하며 서버 재시작 시 초기화됩니다.
+
+## 검증
+
+```powershell
+bun run lint
+bun test
+bun run build
+```
+
+실제 DART 검증은 키를 설정한 개발 서버를 실행한 상태에서 별도 터미널로 실행합니다.
+
+```powershell
+bun run test:smoke
+```
+
+기본 대상은 localhost:3000입니다. 다른 주소라면 `TEST_BASE_URL` 환경변수를 설정합니다. 이 테스트는 DART의 실제 자료를 조회하고 `.tmp/smoke-review.xlsx`를 생성합니다. 웹 브라우저의 검토 결정은 변경하지 않습니다. 검증용 금액은 테스트에만 있습니다. 수정공시로 원본 금액이 달라지면 과거 기대값 테스트가 실패할 수 있습니다.
+
+2026-09-22 검증: SK하이닉스 2025 CFS(접수번호 20260317000635)의 주요 11개 금액, EPS·OCI 분리, 금융 세부 합계, 기타수익/비용 구간, 판관비 상세, 법인세 근거 및 지분법 대사 `-93,545 + -471,008 = -564,553`(차이 0)를 확인했습니다. 삼성전자 2025 CFS의 손익·매출 근거도 확인했습니다. ExcelJS로 7개 시트·검토 입력·대사 수식을 다시 읽어 검증하고 시트를 렌더링하여 확인했습니다.
+
+## 현재 범위
+
+사업보고서의 회사별 비표준 표 구조, 분리된 금융 주석이나 불명확한 당기/단위 표시는 추가 검토가 필요할 수 있습니다. 금액 일치가 입증되지 않으면 강도를 낮춰 표시합니다. DART 장애·요청 제한·자료 부재에 따라 조회가 실패할 수 있습니다.
+
+DB·로그인·사용자 간 동기화는 없습니다. 브라우저 데이터 삭제 시 저장된 결정도 지워지므로 필요한 검토 결과는 Excel로 보관합니다. 이 앱은 수정공시 이력 전체를 비교하거나 회계 판단을 자동 확정하지 않습니다.
