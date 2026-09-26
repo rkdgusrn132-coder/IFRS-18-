@@ -62,6 +62,49 @@ export function currentValue(rows: EvidenceCell[][], rowIndex: number, preceding
 export function canonicalAccount(value: string) {
   return normalized(value).replace(/\((손실|이익|수익|비용|손익)\)/g, "").replace(/(합계|소계)$/, "");
 }
+
+/** Keep the complete income/expense section, including vertically merged detail labels. */
+export function otherIncomeExpenseSection(rows: EvidenceCell[][], targetIndex: number, account: string): EvidenceCell[][] | null {
+  const kind = (text: string) => {
+    const name = canonicalAccount(text);
+    if (/^기타(?:영업외)?수익$/.test(name)) return "income";
+    if (/^기타(?:영업외)?비용$/.test(name)) return "expense";
+    return null;
+  };
+  const targetKind = kind(account);
+  if (!targetKind || targetIndex < 0 || targetIndex >= rows.length) return null;
+  const grid = tableGrid(rows);
+  const label = normalized(grid[targetIndex]?.[0]?.text ?? "");
+  let start = targetIndex;
+  let end = targetIndex + 1;
+  if (/합계|소계|총계/.test(label)) {
+    // Totals at the bottom: include the preceding details after the previous section's total.
+    start = 0;
+    for (let i = targetIndex - 1; i >= 0; i--) {
+      const previous = normalized(grid[i]?.[0]?.text ?? "");
+      if (/합계|소계|총계/.test(previous)) { start = i + 1; break; }
+    }
+  } else if (kind(label) === targetKind) {
+    // Totals at the top: the following rows belong to this section until the other category.
+    // tableGrid resolves rowspans so continuation rows retain their parent category.
+    for (let i = targetIndex - 1; i >= 0; i--) {
+      const previousKind = kind(grid[i]?.[0]?.text ?? "");
+      if (previousKind && previousKind !== targetKind) break;
+      if (previousKind === targetKind) start = i;
+    }
+    end = rows.length;
+    for (let i = targetIndex + 1; i < rows.length; i++) {
+      const nextKind = kind(grid[i]?.[0]?.text ?? "");
+      if (nextKind && nextKind !== targetKind) { end = i; break; }
+      if (nextKind === targetKind && /합계|소계|총계/.test(normalized(grid[i]?.[0]?.text ?? ""))) { end = i + 1; break; }
+    }
+  } else {
+    return null;
+  }
+  // Select by row position, not text: identical labels/amounts may be distinct source rows.
+  return rows.filter((row, i) => (i >= start && i < end) || (i < start && row.length > 0 && row.every(cell => cell.header)));
+}
+
 export function directAmountMatches(rows: EvidenceCell[][], index: number, raw: number | null, unit: string | null, preceding: string) {
   const divisor = unitDivisor(unit); const value = currentValue(rows, index, preceding);
   return raw !== null && divisor !== null && value !== null && Math.abs(value - raw / divisor) <= (divisor === 1 ? 0.00001 : 0.5);

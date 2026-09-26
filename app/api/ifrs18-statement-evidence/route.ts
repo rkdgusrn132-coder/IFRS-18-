@@ -1,4 +1,4 @@
-import { canonicalAccount, currentValue, directAmountMatches, equityReconciliation, inferTableUnit, numberFromText } from "@/lib/evidence";
+import { canonicalAccount, currentValue, directAmountMatches, equityReconciliation, inferTableUnit, numberFromText, otherIncomeExpenseSection } from "@/lib/evidence";
 import { apiError, cached, getAnnualReport, getDocumentXml, validateScope } from "@/lib/dart";
 
 export const runtime = "nodejs";
@@ -1371,111 +1371,6 @@ function dedupeRows(
   );
 }
 
-function buildOtherIncomeExpenseSection(
-  rows: TableCell[][],
-  targetIndex: number,
-  account: string
-) {
-  const normalizedAccount =
-    normalizeText(
-      account
-    );
-
-  const isOtherIncome =
-    normalizedAccount.includes(
-      "기타영업외수익"
-    ) ||
-    normalizedAccount.includes(
-      "기타수익"
-    );
-
-  const isOtherExpense =
-    normalizedAccount.includes(
-      "기타영업외비용"
-    ) ||
-    normalizedAccount.includes(
-      "기타비용"
-    );
-
-  if (
-    !isOtherIncome &&
-    !isOtherExpense
-  ) {
-    return null;
-  }
-
-  if (
-    targetIndex < 0
-  ) {
-    return null;
-  }
-
-  const targetLabel =
-    normalizeText(
-      rows[
-        targetIndex
-      ]?.[0]?.text ?? ""
-    );
-
-  if (
-    !targetLabel.includes(
-      "합계"
-    )
-  ) {
-    return null;
-  }
-
-  let startIndex = 0;
-
-  for (
-    let index =
-      targetIndex - 1;
-    index >= 0;
-    index--
-  ) {
-    const label =
-      normalizeText(
-        rows[index]?.[0]
-          ?.text ?? ""
-      );
-
-    if (
-      label.includes(
-        "합계"
-      )
-    ) {
-      startIndex =
-        index + 1;
-      break;
-    }
-  }
-
-  const headers =
-    rows
-      .slice(
-        0,
-        startIndex
-      )
-      .filter(
-        (row) =>
-          row.some(
-            (cell) =>
-              cell.header
-          )
-      );
-
-  const section =
-    rows.slice(
-      startIndex,
-      targetIndex + 1
-    );
-
-  return dedupeRows([
-    ...headers,
-    ...section,
-  ]);
-}
-
 function buildFocusedRows(
   rows: TableCell[][],
   targetIndex: number,
@@ -1535,7 +1430,7 @@ function buildFocusedRows(
   }
 
   const sectionRows =
-    buildOtherIncomeExpenseSection(
+    otherIncomeExpenseSection(
       rows,
       targetIndex,
       account

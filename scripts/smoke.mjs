@@ -45,6 +45,20 @@ const samsung=await get('ifrs18-statement',{corp_code:'00126380',year:'2025',fs_
 const sales=samsung.statement_rows.find(r=>/매출액|수익\(매출액\)/.test(r.account));assert(sales);
 const samsungEvidence=await get('ifrs18-statement-evidence',{corp_code:'00126380',year:'2025',fs_div:'CFS',rcept_no:samsung.rcept_no,account:sales.account,current_amount:String(sales.current_amount)});assert(samsungEvidence.candidate_count>0);
 console.log('PASS 삼성전자 smoke:',samsung.statement_rows.length,'P/L rows',samsungEvidence.primary_confidence);
+for (const [account, labels, total] of [
+ ['기타수익', ['배당금수익','임대료수익','유형자산처분이익','기타'], 2267083],
+ ['기타비용', ['유형자산처분손실','기부금','기타'], 1575901],
+]) {
+ const row=samsung.statement_rows.find(r=>r.account===account);assert(row);
+ const e=await get('ifrs18-statement-evidence',{corp_code:'00126380',year:'2025',fs_div:'CFS',rcept_no:samsung.rcept_no,account,current_amount:String(row.current_amount)});
+ const rows=e.primary_evidence.tables[0].focused_rows;
+ assert.equal(e.primary_confidence,'verified');
+ assert.equal(rows.length,labels.length+2);
+ assert.deepEqual(rows.slice(2).map(r=>r.at(-2).text),labels);
+ assert.equal(rows.slice(2).reduce((sum,r)=>sum+Number(r.at(-1).text.replaceAll(',','')),0),total);
+ assert(!rows.flat().some(c=>c.text===(account==='기타수익'?'기타비용':'기타수익')));
+ console.log('PASS 삼성전자',account,labels.length,'개 세부항목 및 합계');
+}
 const invalid=await fetch(base+'/api/ifrs18-statement?corp_code=bad&year=2025&fs_div=CFS');assert.equal(invalid.status,400);
 const mismatch=await fetch(base+'/api/export-xlsx',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({...payload,financeAnalysis:{...f,report:samsung.report}})});assert.equal(mismatch.status,409);
 await fs.writeFile('.tmp/smoke-payload.json',JSON.stringify(payload));
