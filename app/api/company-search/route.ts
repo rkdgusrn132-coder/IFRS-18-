@@ -1,5 +1,4 @@
-import { cached, dartFetch, apiError } from "@/lib/dart";
-import AdmZip from "adm-zip";
+import { cached, dartZipXml, apiError, DartError } from "@/lib/dart";
 import { XMLParser } from "fast-xml-parser";
 
 type DartCompany = {
@@ -40,48 +39,7 @@ export async function GET(request: Request) {
 
   try {
     const companies = await cached("company-registry", async () => {
-    /*
-      1. DART에서 전체 기업 고유번호 ZIP 다운로드
-    */
-
-    const response = await dartFetch("corpCode.xml", {});
-
-
-
-    /*
-      2. ZIP 파일 열기
-    */
-
-    const arrayBuffer =
-      await response.arrayBuffer();
-
-    const buffer =
-      Buffer.from(arrayBuffer);
-
-    const zip =
-      new AdmZip(buffer);
-
-    const xmlEntry =
-      zip
-        .getEntries()
-        .find(
-          (entry) =>
-            !entry.isDirectory &&
-            entry.entryName
-              .toLowerCase()
-              .endsWith(".xml")
-        );
-
-    if (!xmlEntry) throw new Error("Missing registry XML");
-
-    /*
-      3. XML → JavaScript 객체
-    */
-
-    const xmlText =
-      xmlEntry
-        .getData()
-        .toString("utf8");
+    const xmlText = await dartZipXml("corpCode.xml", {}, "CORPCODE.xml");
 
     const parser =
       new XMLParser({
@@ -110,6 +68,9 @@ export async function GET(request: Request) {
         ? rawList
         : [rawList];
 
+    if (!companies.length || !companies.every(company => typeof company?.corp_code === "string" && typeof company.corp_name === "string")) {
+      throw new DartError("DART 회사 목록의 형식을 확인할 수 없습니다. 잠시 후 다시 시도하세요.");
+    }
     return companies;
     }, 24 * 60 * 60_000);
     /*
